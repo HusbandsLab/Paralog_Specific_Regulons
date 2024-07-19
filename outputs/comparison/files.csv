@@ -1,0 +1,10 @@
+"EXAMPLE. PUT FILES WHERE THEY NEED TO BE, EDIT SAMPLE ID, TISSUE -> REPLICATE, AND ADD CORRECT FILE PATHS FOR COLUMNS G -> J. DELETE ANYTHING UNCESSARY. UPDATE FILE PATH IN THE R CODE. DELETE THIS ROW",,,,,,,,,,,
+SampleID,Tissue,Factor,Condition,Treatment,Replicate,bamReads,ControlID,bamControl,Peaks,PeakCaller,ScoreCol
+CNA-FLAG-1,CNA,CNA,CNA,CNA,1,./reads/cna/cna_flag_1.bam,CNA-input-1,./controls/cna/cna_input.bam,./peaks/cna/cna_flag_1.bed,narrow,8
+CNA-FLAG-2,CNA,CNA,CNA,CNA,2,./reads/cna/cna_flag_2.bam,CNA-input-2,./controls/cna/cna_input.bam,./peaks/cna/cna_flag_2.bed,narrow,8
+CNA-FLAG-3,CNA,CNA,CNA,CNA,3,./reads/cna/cna_flag_3.bam,CNA-input-3,./controls/cna/cna_input.bam,./peaks/cna/cna_flag_3.bed,narrow,8
+PHB-FLAG-1,PHB,PHB,PHB,PHB,1,./reads/phb/phb_flag_1.bam,PHB-input-1,./controls/phb/phb_input.bam,./peaks/phb/phb_flag_1.bed,narrow,8
+PHB-FLAG-2,PHB,PHB,PHB,PHB,2,./reads/phb/phb_flag_2.bam,PHB-input-2,./controls/phb/phb_input.bam,./peaks/phb/phb_flag_2.bed,narrow,8
+PHB-FLAG-3,PHB,PHB,PHB,PHB,3,./reads/phb/phb_flag_3.bam,PHB-input-3,./controls/phb/phb_input.bam,./peaks/phb/phb_flag_3.bed,narrow,8
+WT-FLAG-1,WT,WT,WT,WT,1,./reads/wt/wt_flag_1.bam,WT-input-1,./controls/cna/cna_input.bam,./peaks/wt/wt_flag_1.bed,narrow,8
+WT-FLAG-2,WT,WT,WT,WT,2,./reads/wt/wt_flag_2.bam,WT-input-2,./controls/cna/cna_input.bam,./peaks/wt/wt_flag_2.bed,narrow,8
