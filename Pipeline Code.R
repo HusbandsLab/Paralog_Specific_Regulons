@@ -1,3 +1,4 @@
+
 #Install the packages below if you dont already have them. Some may be through bioconductor
 #Library Packages
 library(DiffBind)
@@ -8,25 +9,45 @@ library(reshape)
 library(stringr)
 library(rtracklayer)
 
+if (!requireNamespace("tidyr", quietly = TRUE)) {
+  install.packages("tidyr")
+}
+library(tidyr)
+
+
 #Read file that specifies file locations and information for DiffBind
 #To keep color schemes consistent later, highly recommend putting your mutant / comparing construct 2nd in the data sheet, and wt as the 3rd
 #This should be the only file you need to make changes, change sample names in the file and paths to the appropriate files
 #then changing the file path below to where the "files.csv" is saved to
-data_files <- read.csv("./outputs/cna v delta v wt/files.csv", sep = ",", header = TRUE)
+data_files <- read.csv("/Users/ayh/Downloads/Pipeline_PHBvWtD/outputs/files.csv", sep = ",", header = TRUE)
 
-#Perform DiffBind Analysis
-#Common error seen with dba.count: "Read block operation failed with error 1 after 0 of 4 bytes"
-#Online says this error occurs when the bam file is corrupted during download
-#IDK why, just keep redownloading it until it starts working for this file
-#Has taken 10 tries before with me, but if it really is not working for a control, switch it to a control input that has worked
-#This code is set up for an analysis of 2 genotypes, with 3 replicates each. If your analysis is different from that, you will need to adjust some of the code 
+# Read the files.csv
+file_paths <- read.csv("./outputs/files.csv", sep = ",", header = TRUE)$file_column_name
+
+# Replace 'file_column_name' with the name of the column in your CSV that contains the file paths.
+
+# Check if each file exists
+file_check <- sapply(file_paths, file.exists)
+
+# Print the results
+if (all(file_check)) {
+  cat("All referenced files exist and are accessible.\n")
+} else {
+  cat("Some files are missing or inaccessible. Check the following:\n")
+  missing_files <- file_paths[!file_check]
+  print(missing_files)
+}
+# Perform DiffBind Analysis
+# Common error seen with dba.count: "Read block operation failed with error 1 after 0 of 4 bytes"
+# Online says this error occurs when the bam file is corrupted during download and should be redownloaded. 
+# This code is set up for an analysis of 2 experimental genotypes, with 3 replicates each, and the wildtype control with 2 replicates. If your analysis is different from that, you will need to adjust some of the code 
 Comparison <- dba(sampleSheet= data_files)
-Comparison <- dba.count(Comparison, summits = 200, minOverlap = 2)
+Comparison <- dba.count(Comparison, summits = 150, filter = 0, minOverlap = 2)
 Comparison <- dba.normalize(Comparison)
 Comparison <- dba.contrast(Comparison, minMembers = 2)
 Comparison <- dba.analyze(Comparison)
 
-#Generate the report of the DiffBind analysis, convert to data frame, arrange in same order
+# Generate the report of the DiffBind analysis, convert to data frame, arrange in same order
 ChIP.DB.1 <- dba.report(Comparison, th = 1, bNormalized = TRUE, bCalled = TRUE, contrast = 1)
 ChIP.DB.2 <- dba.report(Comparison, th = 1, bNormalized = TRUE, bCalled = TRUE, contrast = 2)
 ChIP.DB.3 <- dba.report(Comparison, th = 1, bNormalized = TRUE, bCalled = TRUE, contrast = 3)
@@ -43,112 +64,117 @@ ChIP.DB.3 <- as.data.frame(ChIP.DB.3)
 ChIP.DB.3$row_name <- as.numeric(row.names(ChIP.DB.3))
 ChIP.DB.3 <- ChIP.DB.3[order(ChIP.DB.3$row_name), ]
 
+# Combine information from the data sets
+db <- data.frame(ChIP.DB.1[1:5], ChIP.DB.1[7:8], ChIP.DB.2[8], ChIP.DB.1[11], ChIP.DB.2[11], ChIP.DB.3[11], 
+                 ChIP.DB.1[12:13], ChIP.DB.2[13], ChIP.DB.1[14])
+db1 <- db  # Keep the original data for reference
 
-#Combine information from the data sets
-db <- data.frame(ChIP.DB.1[1:5], ChIP.DB.1[7:8], ChIP.DB.2[8],ChIP.DB.1[11], ChIP.DB.2[11],ChIP.DB.3[11], ChIP.DB.1[12:13], ChIP.DB.2[13], ChIP.DB.1[14])
-db1 <- db 
+# Identify sites we call as true binding, with at least 2 replicates in one genotype having the same called peak
+db <- filter(db, db[[12]] >= 2 | db[[13]] >= 2 | db[[14]] >= 2)
 
-#Identify sites we call as true binding, with at least 2 replicates in one genotype having the same called peak
-db <- filter(db, db[12]>=2 | db[13]>=2 | db[14]>=2)
-
-#Begin identifying relationships
-#Dont be afraid of errors, they very well may happen if there are no matches. just keep going down
-#Identify mutual binding sites
-mutual <- filter(db, db[12]>=1 & db[13]>=1 & db[14]>=1 & db[9]>=0.1 & db[10]>=0.1 & db[11]>=0.1)
-mutual$relationship <- "true_mutual"
-
-#Identify mutual with higher affinity in one
-mutual_1_high <- filter(db, db[12]>=1 & db[13]>=1 & db[14]>=1 & db[9] <= 0.05 & db[10]<=0.05 & db[6] > db[7] & db[6] > db[8])
-mutual_1_high$relationship <- "mutual sample1 high"
-
-mutual_2_high <- filter(db, db[12]>=1 & db[13]>=1 & db[14]>=1 & db[9] <= 0.05 & db[11]<=0.05 & db[7] > db[6] & db[7] > db[8])
-mutual_2_high$relationship <- "mutual sample2 high"
-
-mutual_3_high <- filter(db, db[12]>=1 & db[13]>=1 & db[14]>=1 & db[10] <= 0.05 & db[11]<=0.05 & db[8] > db[6] & db[8] > db[7])
-mutual_3_high$relationship <- "mutual sample3 high"
-
-#Identify mutual with higher affinity in two
-mutual_1_2_high <- filter(db, db[12]>=1 & db[13]>=1 & db[14]>=1 & db[9] >= 0.1 & db[10]<=0.05 & db[11] <= 0.05 & db[6] > db[8] & db[7] > db[8])
-mutual_1_2_high$relationship <- "mutual samples1&2 high"
-
-mutual_1_3_high <- filter(db, db[12]>=1 & db[13]>=1 & db[14]>=1 & db[9] <= 0.05 & db[10]>=0.1 & db[11] <= 0.05 & db[6] > db[7] & db[8] > db[7])
-mutual_1_3_high$relationship <- "mutual samples1&3 high"
-
-mutual_2_3_high <- filter(db, db[12]>=1 & db[13]>=1 & db[14]>=1 & db[9] <= 0.05 & db[10]<=0.05 & db[11] >= 0.1 & db[7] > db[6] & db[8] > db[6])
-mutual_2_3_high$relationship <- "mutual samples2&3 high"
-
-#Identify unique binding sites
-sample1_unique <- filter(db, db[12]>=2 & db[13] == 0 & db[14]==0 & db[9]<= 0.05, db[10]<=0.05 & db[6] > db[7] & db[6] > db[8])
-sample1_unique$relationship <- "sample1 unique"
-
-sample2_unique <- filter(db, db[12]==0 & db[13] >= 2 & db[14]==0 & db[9]<= 0.05, db[11]<=0.05 & db[7] > db[6] & db[7] > db[8])
-sample2_unique$relationship <- "sample2 unique"
-
-sample3_unique <- filter(db, db[12]==0 & db[13] == 0 & db[14]>=2 & db[10]<= 0.05, db[11]<=0.05 & db[8] > db[7] & db[8] > db[7])
-sample3_unique$relationship <- "sample3 unique"
-
-#Identify mutual binding sites in 2 of the 3 samples (3)
-mutual_of_1_2 <- filter(db, db[12]>=1 & db[13]>=1 & db[14]==0 & db[9]>= 0.1 & db[10]<= 0.05 & db[11]<= 0.05 & db[6] > db[8] & db[7] > db[8])
-mutual_of_1_2$relationship <- "mutual of samples1&2"
-
-mutual_of_1_3 <- filter(db, db[12]>=1 & db[13]==0 & db[14]>=1 & db[9]<= 0.05 & db[10]>= 0.1 & db[11]<= 0.05 & db[6] > db[7] & db[8] > db[7])
-mutual_of_1_3$relationship <- "mutual of samples1&3"
-
-mutual_of_2_3 <- filter(db, db[12]==0 & db[13]>=1 & db[14]>=1 & db[9]<= 0.05 & db[10]<= 0.05 & db[11]>= 0.1 & db[7] > db[6] & db[8] > db[6])
-mutual_of_2_3$relationship <- "mutual of samples2&3"
-
-#Identify mutual binding sites in 2 of the 3 samples, one higher than other (6)
-mutual_of_1_2_1high <- filter(db, db[12]>=1 & db[13]>=1 & db[14]==0 & db[9]<= 0.05 & db[10]<= 0.05 & db[11]<= 0.05 & db[6] > db[7] & db[6] > db[8])
-mutual_of_1_2_1high$relationship <- "mutual of samples1&2; sample1 high"
-
-mutual_of_1_2_2high <- filter(db, db[12]>=1 & db[13]>=1 & db[14]==0 & db[9]<= 0.05 & db[10]<= 0.05 & db[11]<= 0.05 & db[7] > db[6] & db[7] > db[8])
-mutual_of_1_2_2high$relationship <- "mutual of samples1&2; sample2 high"
-
-mutual_of_1_3_1high <- filter(db, db[12]>=1 & db[13]==0 & db[14]>=1 & db[9]<= 0.05 & db[10]<= 0.05 & db[11]<= 0.05 & db[6] > db[7] & db[6] > db[8])
-mutual_of_1_3_1high$relationship <- "mutual of samples1&3; sample1 high"
-
-mutual_of_1_3_3high <- filter(db, db[12]>=1 & db[13]==0 & db[14]>=1 & db[9]<= 0.05 & db[10]<= 0.05 & db[11]<= 0.05 & db[8] > db[7] & db[8] > db[6])
-mutual_of_1_3_3high$relationship <- "mutual of samples1&3; sample3 high"
-
-mutual_of_2_3_2high <- filter(db, db[12]==0 & db[13]>=1 & db[14]>=1 & db[9]<= 0.05 & db[10]<= 0.05 & db[11]>= 0.05 & db[7] > db[6] & db[7] > db[8])
-mutual_of_2_3_2high$relationship <- "mutual of samples2&3; sample2 high"
-
-mutual_of_2_3_3high <- filter(db, db[12]==0 & db[13]>=1 & db[14]>=1 & db[9]<= 0.05 & db[10]<= 0.05 & db[11]>= 0.05 & db[8] > db[6] & db[8] > db[7])
-mutual_of_2_3_3high$relationship <- "mutual of samples2&3; sample3 high"
-
-#Identify removed peaks (FDRs, wrong binding site (example only 1 in each), confusing relationships, the works)
-
-#combine the dataframes
-df_list <- list(mutual, mutual_1_high, mutual_2_high,mutual_3_high,mutual_1_2_high, mutual_1_3_high, mutual_2_3_high,sample1_unique, sample2_unique, sample3_unique, mutual_of_1_2, mutual_of_1_3, mutual_of_2_3, mutual_of_1_2_1high, mutual_of_1_2_2high, mutual_of_1_3_1high, mutual_of_1_3_3high, mutual_of_2_3_2high, mutual_of_2_3_3high)
-combined_df <- do.call(rbind, df_list)
+# Initialize remaining peaks
+remaining_peaks <- db
 
 
-# List the row names of binding sites with asigned relationships
-rows_to_remove <- c(combined_df$row_name)
+# Step 9: Process Peaks by Categories
+assign_relationship <- function(data, condition, relationship_label) {
+  subset <- filter(data, !!rlang::parse_expr(condition))
+  if (nrow(subset) > 0) {
+    subset$relationship <- relationship_label
+    data <- anti_join(data, subset, by = "row_name")
+  }
+  list(data = data, subset = subset)
+}
 
-# Filter out rows from the origional dffbind results to identify
-# sites with no established relationship (q-values wrong, complex relationships)
-# adds "removed" as relationship
-removed <- db1 %>%
-  filter(!row_name %in% rows_to_remove)
+# Step 1: Prioritize Unique Binding Sites
+result <- assign_relationship(remaining_peaks,
+                              "Called1 >= 2 & Called2 == 0 & Called2.1 == 0 & FDR <= 0.05 & FDR.1 <= 0.05 & Conc_PHB > Conc_WtD & Conc_PHB > Conc_Wt",
+                              "sample1 unique"
+)
+remaining_peaks <- result$data
+sample1_unique <- result$subset
+
+result <- assign_relationship(remaining_peaks,
+                              "Called1 == 0 & Called2 >= 2 & Called2.1 == 0 & FDR <= 0.05 & FDR.2 <= 0.05 & Conc_WtD > Conc_PHB & Conc_WtD > Conc_Wt",
+                              "sample2 unique"
+)
+remaining_peaks <- result$data
+sample2_unique <- result$subset
+
+result <- assign_relationship(remaining_peaks,
+                              "Called1 == 0 & Called2 == 0 & Called2.1 >= 2 & FDR.1 <= 0.05 & FDR.2 <= 0.05 & Conc_Wt > Conc_PHB & Conc_Wt > Conc_WtD",
+                              "sample3 unique"
+)
+remaining_peaks <- result$data
+sample3_unique <- result$subset
+
+# Step 2: Identify True Mutuals
+result <- assign_relationship(remaining_peaks,
+                              "Called1 >= 1 & Called2 >= 1 & Called2.1 >= 1 & FDR >= 0.1 & FDR.1 >= 0.1 & FDR.2 >= 0.1",
+                              "true_mutual"
+)
+remaining_peaks <- result$data
+true_mutual <- result$subset
+
+# Step 3: Refine Mutuals by Specific Categories
+categories <- list(
+  list(condition = "Called1 >= 1 & Called2 >= 1 & Called2.1 == 0 & FDR <= 0.05 & FDR.1 <= 0.05 & Conc_PHB > Conc_WtD",
+       label = "mutual of samples1&2; sample1 high"),
+  list(condition = "Called1 >= 1 & Called2 >= 1 & Called2.1 == 0 & FDR <= 0.05 & FDR.1 <= 0.05 & Conc_WtD > Conc_PHB",
+       label = "mutual of samples1&2; sample2 high"),
+  list(condition = "Called1 >= 1 & Called2 == 0 & Called2.1 >= 1 & FDR <= 0.05 & FDR.2 <= 0.05 & Conc_PHB > Conc_Wt",
+       label = "mutual of samples1&3; sample1 high"),
+  list(condition = "Called1 >= 1 & Called2 == 0 & Called2.1 >= 1 & FDR <= 0.05 & FDR.2 <= 0.05 & Conc_Wt > Conc_PHB",
+       label = "mutual of samples1&3; sample3 high"),
+  list(condition = "Called1 == 0 & Called2 >= 1 & Called2.1 >= 1 & FDR.1 <= 0.05 & FDR.2 <= 0.05 & Conc_WtD > Conc_Wt",
+       label = "mutual of samples2&3; sample2 high"),
+  list(condition = "Called1 == 0 & Called2 >= 1 & Called2.1 >= 1 & FDR.1 <= 0.05 & FDR.2 <= 0.05 & Conc_Wt > Conc_WtD",
+       label = "mutual of samples2&3; sample3 high"),
+  list(condition = "Called1 >= 1 & Called2 >= 1 & Called2.1 == 0 & FDR >= 0.05 & FDR.1 <= 0.05 & FDR.2 <= 0.05",
+       label = "mutual of samples1&2"),
+  list(condition = "Called1 >= 1 & Called2 == 0 & Called2.1 >= 1 & FDR <= 0.05 & FDR.1 >= 0.05 & FDR.2 <= 0.05",
+       label = "mutual of samples1&3"),
+  list(condition = "Called1 == 0 & Called2 >= 1 & Called2.1 >= 1 & FDR <= 0.05 & FDR.1 <= 0.05 & FDR.2 >= 0.05",
+       label = "mutual of samples2&3")
+)
+
+for (cat in categories) {
+  result <- assign_relationship(remaining_peaks, cat$condition, cat$label)
+  remaining_peaks <- result$data
+  assign(cat$label, result$subset)
+}
+
+# Classify Remaining Peaks as Removed
+removed <- remaining_peaks
 removed$relationship <- "removed"
 
-#add the removed sites to the rest of the data
-list(mutual, mutual_1_high)
-combined_df <- do.call(rbind, list(combined_df, removed))
+# Combine all relationships
+combined_df <- bind_rows(true_mutual, sample1_unique, sample2_unique, sample3_unique, 
+                         `mutual of samples1&2; sample1 high`, `mutual of samples1&2; sample2 high`, 
+                         `mutual of samples1&3; sample1 high`, `mutual of samples1&3; sample3 high`,
+                         `mutual of samples2&3; sample2 high`, `mutual of samples2&3; sample3 high`,
+                         `mutual of samples1&2`, `mutual of samples1&3`, `mutual of samples2&3`, removed)
 
-#output full labeled dataset and quick summary
+# Write the output to CSV
 combined_df <- combined_df[order(combined_df$row_name), ]
-write.csv(combined_df, "diffbind_ouput.csv", row.names = FALSE)
-summary_df <- data.frame("mutual" = nrow(mutual),"mutual sample1 high" = nrow(mutual_1_high),"mutual sample2 high" = nrow(mutual_2_high) ,"mutual sample3 high" = nrow(mutual_3_high), "mutual samples1&2 high" = nrow(mutual_1_2_high), "mutual samples1&3 high" = nrow(mutual_1_3_high), "mutual samples2&3 high" = nrow(mutual_2_3_high),"sample1 unique" =  nrow(sample1_unique), "sample2 unique" = nrow(sample2_unique), "sample3 unique" = nrow(sample3_unique), "mutual of samples1&2" = nrow(mutual_of_1_2), "mutual of samples1&3" = nrow(mutual_of_1_3), "mutual of samples2&3" = nrow(mutual_of_2_3), "mutual of samples1&2; sample1 high" = nrow(mutual_of_1_2_1high), "mutual of samples1&2; sample2 high" = nrow(mutual_of_1_2_2high),"mutual of samples1&3; sample1 high" = nrow(mutual_of_1_3_1high), "mutual of samples1&3; sample3 high" = nrow(mutual_of_1_3_3high), "mutual of samples2&3; sample2 high" =  nrow(mutual_of_2_3_2high), "mutual of samples2&3; sample3 high" = nrow(mutual_of_2_3_3high), "removed" = nrow(removed))
-write.csv(summary_df, "relationship_summary.csv", row.names = FALSE)
+write.csv(combined_df, "diffbind_output_refined.csv", row.names = FALSE)
+
+
+
+# Generate a summary of relationships
+summary_df <- combined_df %>%
+  group_by(relationship) %>%
+  summarise(count = n()) %>%
+  pivot_wider(names_from = relationship, values_from = count, values_fill = 0)
+write.csv(summary_df, "relationship_summary_refined.csv", row.names = FALSE)
 
 
 ###########################################################
 #Begin to Generate Heatmaps
 #This code assumes that "sample3" is wildtype
 #There are 2 codes that can alter the color (scale_fill_gradiant & scale_fill_distiller)
-#Distiller will make the scale itself for the most part except the NA color
+#Distiller will make the scale itself for the most part except the NA color which you should assign as the darkest color
+#Depending on your level of signal, you may need to adjust the "limits = c(0,150) to better highlight your own data. 
 #Gradiant is for if you want to make your own color color
 
 #Generate heatmaps of the mutual sites of 1&2, mutual affinity, removing wt of sample 3
@@ -681,8 +707,7 @@ write.csv(combined_df, "Diffbind Peak with gene Annotation.csv", row.names = FAL
 
 
 ###################################################
-#IDK what im doing from here. I want to start combination with the RNAseq
-# The next like 100 lines are sloppy and dont loop but work
+#Combine the ChIP-seq data with DESeq2 results
 #Do not edit this first file. it is included in the folder
 genes <- read.csv("gene_ids.csv", header = TRUE, sep = ",")
 
@@ -796,9 +821,9 @@ write.csv(genes, "gene binding events.csv", row.names = FALSE)
 #Begin combination with RNA seq data
 #Edit the names of where your RNA seq files are
 
-sample1_rna <- read.csv("./rna/cna_induced_vs_mock.csv", header = TRUE)
+sample1_rna <- read.csv("./rna/phb_induced_vs_mock.csv", header = TRUE)
 sample1_rna <- data.frame("dominant_isoform" = sample1_rna$X, "sample1_log2_fold" = sample1_rna$log2FoldChange, "sample1_padj" = sample1_rna$padj)
-sample2_rna <- read.csv("./rna/cna_delta_induced_vs_mock.csv", header = TRUE)
+sample2_rna <- read.csv("./rna/phb_delta_induced_vs_mock.csv", header = TRUE)
 sample2_rna <- data.frame("dominant_isoform" = sample2_rna$X, "sample2_log2_fold" = sample2_rna$log2FoldChange, "sample2_padj" = sample2_rna$padj)
 
 #Merge RNA seq data with gene binding information
